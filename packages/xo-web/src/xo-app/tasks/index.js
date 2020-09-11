@@ -14,12 +14,15 @@ import {
   flatMap,
   flatten,
   isEmpty,
+  keyBy,
   keys,
+  mapValues,
   some,
   toArray,
 } from 'lodash'
 import { Pool } from 'render-xo-item'
 import {
+  createCollectionWrapper,
   createFilter,
   createGetObject,
   createGetObjectsOfType,
@@ -174,7 +177,22 @@ const GROUPED_ACTIONS = [
     createSelector(getPendingTasksByPool, keys)
   )
 
+  const getLinkedObjectIds = createSelector(getPendingTasks, tasks =>
+    flatMap(tasks, task => Object.keys(task.current_operations))
+  )
+
+  const getLinkedObjects = createSelector(
+    createGetObjectsOfType('pool').pick(getLinkedObjectIds),
+    createGetObjectsOfType('host').pick(getLinkedObjectIds),
+    createGetObjectsOfType('VDI').pick(getLinkedObjectIds),
+    createGetObjectsOfType('VM').pick(getLinkedObjectIds),
+    createGetObjectsOfType('network').pick(getLinkedObjectIds),
+    (pools, hosts, vdis, vms, networks) =>
+      keyBy({ ...pools, ...hosts, ...vdis, ...vms, ...networks }, 'id')
+  )
+
   return {
+    linkedObjects: getLinkedObjects,
     nTasks: getNPendingTasks,
     pendingTasksByPool: getPendingTasksByPool,
     pools: getPools,
@@ -219,6 +237,18 @@ export default class Tasks extends Component {
     )
   )
 
+  _getLinkedObjectsByTask = createSelector(
+    createSelector(
+      this._getTasks,
+      createCollectionWrapper(_ => keyBy(_, 'id'))
+    ),
+    () => this.props.linkedObjects,
+    (tasksById, linkedObjects) =>
+      mapValues(tasksById, task =>
+        Object.keys(task.current_operations).map(id => linkedObjects[id])
+      )
+  )
+
   render() {
     const { props } = this
     const { intl, nTasks, pools } = props
@@ -243,6 +273,7 @@ export default class Tasks extends Component {
               <SortedTable
                 collection={this._getTasks()}
                 columns={COLUMNS}
+                data-linkedObjectsByTask={this._getLinkedObjectsByTask()}
                 filterContainer={() => this.state.container}
                 groupedActions={GROUPED_ACTIONS}
                 individualActions={INDIVIDUAL_ACTIONS}
